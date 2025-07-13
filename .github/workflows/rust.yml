@@ -1,22 +1,30 @@
 name: Rust
-
 on:
   push:
     branches: [ "master" ]
   pull_request:
     branches: [ "master" ]
-
 env:
   CARGO_TERM_COLOR: always
-
 jobs:
-  build:
-
+  build_frontend:
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/checkout@v4
-    - name: Build
+    - name: Build Frontend
       run: cargo build --verbose
-    - name: Run tests
+      working-directory: frontend
+    - name: Run Frontend Tests
       run: cargo test --verbose
+      working-directory: frontend
+
+  build_backend:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Build Backend
+      run: cargo build --verbose
+      working-directory: backend
+    - name: Run Backend Tests
+      run: cargo test --verbose
+      working-directory: backend
