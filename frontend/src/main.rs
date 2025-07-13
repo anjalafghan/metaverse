@@ -1,57 +1,130 @@
-//! A simple example of hooking up stdin/stdout to a WebSocket stream.
-//!
-//! This example will connect to a server specified in the argument list and
-//! then forward all data read on stdin to the server, printing out all data
-//! received on stdout.
-//!
-//! Note that this is not currently optimized for performance, especially around
-//! buffer management. Rather it's intended to show an example of working with a
-//! client.
-//!
-//! You can use this example together with the `server` example.
-
 use std::env;
 
-use futures_util::{future, pin_mut, StreamExt};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use futures_util::{future, pin_mut, StreamExt, SinkExt};
+use serde::{Deserialize, Serialize};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatMessage {
+    pub id: String,
+    pub user_id: String,
+    pub room_id: String,
+    pub content: String,
+    pub timestamp: u64,
+}
 
 #[tokio::main]
 async fn main() {
-    let url =
-        env::args().nth(1).unwrap_or_else(|| panic!("this program requires at least one argument"));
+    let url = env::args()
+        .nth(1)
+        .unwrap_or_else(|| "ws://127.0.0.1:8080".to_string());
+
+    println!("Connecting to: {}", url);
 
     let (stdin_tx, stdin_rx) = futures_channel::mpsc::unbounded();
     tokio::spawn(read_stdin(stdin_tx));
 
     let (ws_stream, _) = connect_async(&url).await.expect("Failed to connect");
-    println!("WebSocket handshake has been successfully completed");
+    println!("✅ Connected to chat server!");
+    println!("Type messages and press Enter to send. Type 'quit' to exit.");
 
     let (write, read) = ws_stream.split();
 
-    let stdin_to_ws = stdin_rx.map(Ok).forward(write);
+    // Handle incoming messages from server
     let ws_to_stdout = {
         read.for_each(|message| async {
-            let data = message.unwrap().into_data();
-            tokio::io::stdout().write_all(&data).await.unwrap();
+            match message {
+                Ok(Message::Text(text)) => {
+                    // Try to parse as ChatMessage
+                    if let Ok(chat_msg) = serde_json::from_str::<ChatMessage>(&text) {
+                        println!("\n[{}] {}: {}",
+                                 format_timestamp(chat_msg.timestamp),
+                                 chat_msg.user_id,
+                                 chat_msg.content
+                        );
+                    } else {
+                        println!("📨 {}", text);
+                    }
+                }
+                Ok(Message::Binary(data)) => {
+                    if let Ok(text) = String::from_utf8(Vec::from(data)) {
+                        println!("📨 {}", text);
+                    }
+                }
+                Ok(Message::Ping(_)) => {
+                    // Server sent ping, client should respond with pong
+                    // (usually handled automatically by the library)
+                }
+                Ok(Message::Close(_)) => {
+                    println!("🔌 Connection closed by server");
+                }
+                Err(e) => {
+                    println!("❌ Error: {}", e);
+                }
+                _ => {}
+            }
         })
     };
 
+    // Handle outgoing messages to server
+    let stdin_to_ws = stdin_rx.map(Ok).forward(write);
+
     pin_mut!(stdin_to_ws, ws_to_stdout);
     future::select(stdin_to_ws, ws_to_stdout).await;
+
+    println!("👋 Goodbye!");
 }
 
-// Our helper method which will read data from stdin and send it along the
-// sender provided.
 async fn read_stdin(tx: futures_channel::mpsc::UnboundedSender<Message>) {
-    let mut stdin = tokio::io::stdin();
+    let stdin = tokio::io::stdin();
+    let mut reader = BufReader::new(stdin);
+    let mut line = String::new();
+
     loop {
-        let mut buf = vec![0; 1024];
-        let n = match stdin.read(&mut buf).await {
-            Err(_) | Ok(0) => break,
-            Ok(n) => n,
-        };
-        buf.truncate(n);
-        tx.unbounded_send(Message::binary(buf)).unwrap();
+        line.clear();
+        print!("💬 ");
+        tokio::io::stdout().flush().await.unwrap();
+
+        match reader.read_line(&mut line).await {
+            Ok(0) => break, // EOF
+            Ok(_) => {
+                let trimmed = line.trim();
+                if trimmed == "quit" || trimmed == "exit" {
+                    break;
+                }
+                if !trimmed.is_empty() {
+                    if let Err(e) = tx.unbounded_send(Message::Text(trimmed.to_string().into())) {
+                        println!("❌ Failed to send: {}", e);
+                        break;
+                    }
+                }
+            }
+            Err(e) => {
+                println!("❌ Error reading input: {}", e);
+                break;
+            }
+        }
+    }
+}
+
+fn format_timestamp(timestamp: u64) -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let diff = now.saturating_sub(timestamp);
+
+    if diff < 60 {
+        "now".to_string()
+    } else if diff < 3600 {
+        format!("{}m ago", diff / 60)
+    } else if diff < 86400 {
+        format!("{}h ago", diff / 3600)
+    } else {
+        format!("{}d ago", diff / 86400)
     }
 }
