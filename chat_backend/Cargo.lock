@@ -24,19 +24,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
-name = "backend"
-version = "0.1.0"
-dependencies = [
- "futures-channel",
- "futures-util",
- "serde",
- "serde_json",
- "tokio",
- "tokio-tungstenite",
- "uuid",
-]
-
-[[package]]
 name = "backtrace"
 version = "0.3.75"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -83,6 +70,19 @@ name = "cfg-if"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9555578bc9e57714c812a1f84e4fc5b4d21fcb063490c624de019f7464c91268"
+
+[[package]]
+name = "chat_backend"
+version = "0.1.0"
+dependencies = [
+ "futures-channel",
+ "futures-util",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-tungstenite",
+ "uuid",
+]
 
 [[package]]
 name = "cpufeatures"

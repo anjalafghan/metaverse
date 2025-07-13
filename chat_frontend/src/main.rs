@@ -1,6 +1,6 @@
 use std::env;
 
-use futures_util::{future, pin_mut, StreamExt, SinkExt};
+use futures_util::{StreamExt, future, pin_mut};
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
@@ -38,10 +38,11 @@ async fn main() {
                 Ok(Message::Text(text)) => {
                     // Try to parse as ChatMessage
                     if let Ok(chat_msg) = serde_json::from_str::<ChatMessage>(&text) {
-                        println!("\n[{}] {}: {}",
-                                 format_timestamp(chat_msg.timestamp),
-                                 chat_msg.user_id,
-                                 chat_msg.content
+                        println!(
+                            "\n[{}] {}: {}",
+                            format_timestamp(chat_msg.timestamp),
+                            chat_msg.user_id,
+                            chat_msg.content
                         );
                     } else {
                         println!("📨 {}", text);

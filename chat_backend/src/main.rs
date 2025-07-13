@@ -2,23 +2,23 @@ use std::{
     collections::HashMap,
     env,
     sync::{
-        atomic::{AtomicUsize, Ordering},
         Arc,
+        atomic::{AtomicUsize, Ordering},
     },
     time::Duration,
 };
 
-use futures_channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
-use futures_util::{future, pin_mut, stream::TryStreamExt, StreamExt, SinkExt};
+use futures_channel::mpsc::{UnboundedSender, unbounded};
+use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::{
     net::{TcpListener, TcpStream},
-    sync::{broadcast, RwLock},
+    sync::{RwLock, broadcast},
     time::interval,
 };
 use tokio_tungstenite::{
     accept_async,
-    tungstenite::{protocol::Message, Error as WsError},
+    tungstenite::{Error as WsError, protocol::Message},
 };
 use uuid::Uuid;
 
@@ -86,13 +86,17 @@ impl ChatServer {
         connections.insert(connection.id.clone(), connection.clone());
 
         // Add to room
-        rooms.entry(connection.room_id.clone())
+        rooms
+            .entry(connection.room_id.clone())
             .or_insert_with(Vec::new)
             .push(connection.id.clone());
 
         self.connection_count.fetch_add(1, Ordering::Relaxed);
 
-        println!("Connection {} joined room {}", connection.id, connection.room_id);
+        println!(
+            "Connection {} joined room {}",
+            connection.id, connection.room_id
+        );
         Ok(())
     }
 
@@ -110,11 +114,17 @@ impl ChatServer {
             }
 
             self.connection_count.fetch_sub(1, Ordering::Relaxed);
-            println!("Connection {} left room {}", connection_id, connection.room_id);
+            println!(
+                "Connection {} left room {}",
+                connection_id, connection.room_id
+            );
         }
     }
 
-    pub async fn broadcast_to_room(&self, message: &ChatMessage) -> Result<usize, Box<dyn std::error::Error>> {
+    pub async fn broadcast_to_room(
+        &self,
+        message: &ChatMessage,
+    ) -> Result<usize, Box<dyn std::error::Error>> {
         // Send through broadcast channel for efficiency
         if let Err(_) = self.broadcast_tx.send(message.clone()) {
             return Err("Broadcast channel full".into());
@@ -122,7 +132,8 @@ impl ChatServer {
 
         // Get room connections count for metrics
         let rooms = self.rooms.read().await;
-        let count = rooms.get(&message.room_id)
+        let count = rooms
+            .get(&message.room_id)
             .map(|conns| conns.len())
             .unwrap_or(0);
 
@@ -133,8 +144,7 @@ impl ChatServer {
         let mut rate_limits = self.rate_limits.write().await;
         let now = std::time::Instant::now();
 
-        let (count, last_reset) = rate_limits.entry(user_id.to_string())
-            .or_insert((0, now));
+        let (count, last_reset) = rate_limits.entry(user_id.to_string()).or_insert((0, now));
 
         // Reset counter every minute
         if now.duration_since(*last_reset) > Duration::from_secs(60) {
